@@ -142,8 +142,8 @@ func (s *FatSecret) makeApiRequest(method string, reqData map[string]string) (ma
 		return nil, fmt.Errorf("error when requesting token, invalid body: %v", err)
 	}
 
-	apiErr := bodyData["error"].(map[string]interface{})
-	if apiErr != nil {
+	if bodyData["error"] != nil {
+		apiErr := bodyData["error"].(map[string]interface{})
 		errCode := uint64(apiErr["code"].(float64))
 		errMsg := apiErr["message"].(string)
 		return nil, fmt.Errorf("API error: method=%s, code=%d: %s", method, errCode, errMsg)
@@ -153,7 +153,5 @@ func (s *FatSecret) makeApiRequest(method string, reqData map[string]string) (ma
 }
 
 func (s *FatSecret) GetTestData() (interface{}, error) {
-	return s.makeApiRequest("food.get.v2", map[string]string{
-		"food_id": "33691",
-	})
+	return s.makeApiRequest("food_entries.get.v2", map[string]string{})
 }
