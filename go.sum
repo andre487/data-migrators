@@ -1,3 +1,7 @@
+github.com/dghubble/oauth1 v0.7.3 h1:EkEM/zMDMp3zOsX2DC/ZQ2vnEX3ELK0/l9kb+vs4ptE=
+github.com/dghubble/oauth1 v0.7.3/go.mod h1:oxTe+az9NSMIucDPDCCtzJGsPhciJV33xocHfcR2sVY=
+github.com/gomodule/oauth1 v0.2.0 h1:/nNHAD99yipOEspQFbAnNmwGTZ1UNXiD/+JLxwx79fo=
+github.com/gomodule/oauth1 v0.2.0/go.mod h1:4r/a8/3RkhMBxJQWL5qzbOEcaQmNPIkNoI7P8sXeI08=
 github.com/loynoir/ExpandUser.go v0.0.0-20210217142224-45967819e764 h1:TplAC0ia7oD3tvujrl2zxX8oo5K18yeUrkNKS45EzmM=
 github.com/loynoir/ExpandUser.go v0.0.0-20210217142224-45967819e764/go.mod h1:Y6DDZWCFswoXByr8B9pk13yCIoj73gsU8Cxnt9PCaIA=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
