@@ -300,6 +300,120 @@ func (s *FatSecret) FoodEntriesGet(date time.Time) (*FoodEntriesData, error) {
 	return FoodEntriesDataFromRaw(rawRes)
 }
 
-func (s *FatSecret) GetTestData() (*FoodEntriesData, error) {
-	return s.FoodEntriesGet(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC))
+type FoodEntriesMonthDataRaw struct {
+	Month struct {
+		Day         []FoodEntryDayDataRaw
+		FromDateInt string                 `mapstructure:"from_date_int"`
+		ToDateInt   string                 `mapstructure:"to_date_int"`
+		Other       map[string]interface{} `mapstructure:",remain"`
+	}
+	Other map[string]interface{} `mapstructure:",remain"`
+}
+
+type FoodEntriesMonthData struct {
+	Month struct {
+		Day         []FoodEntryDayData
+		FromDateInt int64
+		ToDateInt   int64
+	}
+}
+
+type FoodEntryDayDataRaw struct {
+	DateInt      string `mapstructure:"date_int"`
+	Calories     string
+	Carbohydrate string
+	Fat          string
+	Protein      string
+	Other        map[string]interface{} `mapstructure:",remain"`
+}
+
+type FoodEntryDayData struct {
+	DateInt      int64
+	Calories     float64
+	Carbohydrate float64
+	Fat          float64
+	Protein      float64
+}
+
+func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntriesMonthData, error) {
+	if len(rawData.Other) > 0 {
+		log.Printf("WARN: FoodEntriesMonthDataRaw.Other is not empty: %v\n", rawData.Other)
+	}
+
+	if len(rawData.Month.Other) > 0 {
+		log.Printf("WARN: FoodEntriesMonthDataRaw.Month.Other is not empty: %v\n", rawData.Month.Other)
+	}
+
+	var err error
+	var fromDateInt int64
+	var toDateInt int64
+	if fromDateInt, err = parsing.ParseInt64(rawData.Month.FromDateInt); err != nil {
+		return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw FromDateInt: %v", err)
+	}
+	if toDateInt, err = parsing.ParseInt64(rawData.Month.ToDateInt); err != nil {
+		return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw ToDateInt: %v", err)
+	}
+
+	res := FoodEntriesMonthData{}
+	res.Month.FromDateInt = fromDateInt
+	res.Month.ToDateInt = toDateInt
+	for _, item := range rawData.Month.Day {
+		if len(item.Other) > 0 {
+			log.Printf("WARN: FoodEntryDayData.Other is not empty: %v\n", item.Other)
+		}
+
+		var err error
+		var dateInt int64
+		var calories float64
+		var carbohydrate float64
+		var fat float64
+		var protein float64
+
+		if dateInt, err = parsing.ParseInt64(item.DateInt); err != nil {
+			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw DateInt: %v", err)
+		}
+		if calories, err = parsing.ParseFloat64(item.Calories); err != nil {
+			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw Calories: %v", err)
+		}
+		if fat, err = parsing.ParseFloat64(item.Fat); err != nil {
+			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw Fat: %v", err)
+		}
+		if protein, err = parsing.ParseFloat64(item.Protein); err != nil {
+			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw Protein: %v", err)
+		}
+
+		res.Month.Day = append(res.Month.Day, FoodEntryDayData{
+			DateInt:      dateInt,
+			Calories:     calories,
+			Carbohydrate: carbohydrate,
+			Fat:          fat,
+			Protein:      protein,
+		})
+	}
+
+	return &res, nil
+}
+
+func (s *FatSecret) FoodEntriesGetMonth(date time.Time) (*FoodEntriesMonthData, error) {
+	if err := s.oauth.Authorize(); err != nil {
+		return nil, fmt.Errorf("auth error: %v", err)
+	}
+
+	days := misc.DatToDaysFromEpoch(date)
+	reqData := map[string]string{"date": strconv.FormatInt(days, 10)}
+	rawData, err := s.makeApiRequest("food_entries.get_month.v2", reqData)
+	if err != nil {
+		return nil, fmt.Errorf("error when requesting food entries for month: %v", err)
+	}
+
+	rawRes := FoodEntriesMonthDataRaw{}
+	if err := mapstructure.Decode(rawData, &rawRes); err != nil {
+		return nil, fmt.Errorf("error when parsing response of food_entries.get.v2: %v", err)
+	}
+
+	return FoodEntriesMonthDataFromRaw(&rawRes)
+}
+
+func (s *FatSecret) GetTestData() (*FoodEntriesMonthData, error) {
+	return s.FoodEntriesGetMonth(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC))
 }
