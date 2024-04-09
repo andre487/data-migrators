@@ -492,7 +492,7 @@ func (s *FatSecret) GetDiary(fromDate time.Time, toDate time.Time) (*DiaryData, 
 		if toDate.Sub(curDate) < 0 {
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 2)
 	}
 
 	if len(dates) > 0 {
@@ -510,12 +510,8 @@ func (s *FatSecret) GetDiary(fromDate time.Time, toDate time.Time) (*DiaryData, 
 		for _, foodEntry := range data.FoodEntries.FoodEntry {
 			res.DiaryData = append(res.DiaryData, foodEntry)
 		}
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 2)
 	}
 
 	return &res, nil
-}
-
-func (s *FatSecret) GetTestData() (interface{}, error) {
-	return s.GetDiary(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 4, 9, 0, 0, 0, 0, time.UTC))
 }
