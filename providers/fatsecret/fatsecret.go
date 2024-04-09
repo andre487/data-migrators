@@ -116,6 +116,7 @@ type FoodEntryDataRaw struct {
 
 type FoodEntryData struct {
 	DateInt              int64
+	Date                 time.Time
 	FoodId               int64
 	FoodEntryId          int64
 	ServingId            int64
@@ -250,6 +251,7 @@ func FoodEntriesDataFromRaw(rawData FoodEntriesDataRaw) (*FoodEntriesData, error
 
 		res.FoodEntries.FoodEntry = append(res.FoodEntries.FoodEntry, FoodEntryData{
 			DateInt:              dateInt,
+			Date:                 misc.DaysFromEpochToDate(dateInt),
 			FoodId:               foodId,
 			FoodEntryId:          foodEntryId,
 			ServingId:            servingId,
@@ -285,7 +287,7 @@ func (s *FatSecret) FoodEntriesGet(date time.Time) (*FoodEntriesData, error) {
 		return nil, fmt.Errorf("auth error: %v", err)
 	}
 
-	days := misc.DatToDaysFromEpoch(date)
+	days := misc.DateToDaysFromEpoch(date)
 	reqData := map[string]string{"date": strconv.FormatInt(days, 10)}
 	rawData, err := s.makeApiRequest("food_entries.get.v2", reqData)
 	if err != nil {
@@ -315,6 +317,8 @@ type FoodEntriesMonthData struct {
 		Day         []FoodEntryDayData
 		FromDateInt int64
 		ToDateInt   int64
+		FromDate    time.Time
+		ToDate      time.Time
 	}
 }
 
@@ -329,6 +333,7 @@ type FoodEntryDayDataRaw struct {
 
 type FoodEntryDayData struct {
 	DateInt      int64
+	Date         time.Time
 	Calories     float64
 	Carbohydrate float64
 	Fat          float64
@@ -355,8 +360,12 @@ func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntries
 	}
 
 	res := FoodEntriesMonthData{}
+
 	res.Month.FromDateInt = fromDateInt
 	res.Month.ToDateInt = toDateInt
+	res.Month.FromDate = misc.DaysFromEpochToDate(fromDateInt)
+	res.Month.ToDate = misc.DaysFromEpochToDate(toDateInt)
+
 	for _, item := range rawData.Month.Day {
 		if len(item.Other) > 0 {
 			log.Printf("WARN: FoodEntryDayData.Other is not empty: %v\n", item.Other)
@@ -384,6 +393,7 @@ func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntries
 
 		res.Month.Day = append(res.Month.Day, FoodEntryDayData{
 			DateInt:      dateInt,
+			Date:         misc.DaysFromEpochToDate(dateInt),
 			Calories:     calories,
 			Carbohydrate: carbohydrate,
 			Fat:          fat,
@@ -399,7 +409,7 @@ func (s *FatSecret) FoodEntriesGetMonth(date time.Time) (*FoodEntriesMonthData, 
 		return nil, fmt.Errorf("auth error: %v", err)
 	}
 
-	days := misc.DatToDaysFromEpoch(date)
+	days := misc.DateToDaysFromEpoch(date)
 	reqData := map[string]string{"date": strconv.FormatInt(days, 10)}
 	rawData, err := s.makeApiRequest("food_entries.get_month.v2", reqData)
 	if err != nil {
@@ -414,6 +424,6 @@ func (s *FatSecret) FoodEntriesGetMonth(date time.Time) (*FoodEntriesMonthData, 
 	return FoodEntriesMonthDataFromRaw(&rawRes)
 }
 
-func (s *FatSecret) GetTestData() (*FoodEntriesMonthData, error) {
-	return s.FoodEntriesGetMonth(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC))
+func (s *FatSecret) GetTestData() (*FoodEntriesData, error) {
+	return s.FoodEntriesGet(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC))
 }
