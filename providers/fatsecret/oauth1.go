@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,8 +24,6 @@ import (
 const requestTokenUrl = "https://www.fatsecret.com/oauth/request_token"
 const accessTokenUrl = "https://www.fatsecret.com/oauth/access_token"
 const authorizeUrl = "https://www.fatsecret.com/oauth/authorize"
-const baseUrl = "https://platform.fatsecret.com/rest/server.api"
-const secretFile = "oauth1_data.json"
 
 var digitsRe, _ = regexp.Compile("^\\d+$")
 
@@ -75,6 +72,66 @@ func (s *FatSOauth1Service) MakeHttpRequest(reqMethod string, reqUrl string, req
 }
 
 func (s *FatSOauth1Service) Authorize() error {
+	if err := s.GetRequestToken(); err != nil {
+		return err
+	}
+
+	cacheName := "access_token"
+	cachedData := s.getCachedSecret(cacheName)
+	if cachedData != nil && cachedData.Value != "" && cachedData.Value2 != "" {
+		s.authData.AccessToken = cachedData.Value
+		s.authData.AccessTokenSecret = cachedData.Value2
+		return nil
+	}
+
+	if err := s.GetAuthCode(); err != nil {
+		return err
+	}
+
+	if s.authData.AccessToken != "" && s.authData.AccessTokenSecret != "" {
+		return nil
+	}
+
+	reqData := url.Values{
+		"oauth_token":    []string{s.authData.RequestToken},
+		"oauth_verifier": []string{s.authData.AuthCode},
+	}
+	oauthParams, err := s.addOauthParams("POST", accessTokenUrl, reqData)
+	if err != nil {
+		return fmt.Errorf("OAuth request token params error: %v", err)
+	}
+
+	resp, respBody, err := req_util.MakeHttpRequest("POST", accessTokenUrl, oauthParams)
+	if err != nil {
+		return fmt.Errorf("OAuth request token creation error: %v", err)
+	}
+
+	if resp.StatusCode > 201 {
+		return fmt.Errorf("OAuth token request HTTP error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	resultParams, err := url.ParseQuery(string(respBody))
+	if err != nil {
+		return fmt.Errorf("error when parsing token response: %v", err)
+	}
+
+	if val := resultParams.Get("oauth_token"); val != "" {
+		s.authData.AccessToken = val
+	} else {
+		return fmt.Errorf("OAuth response: there is no oauth_token in response")
+	}
+
+	if val := resultParams.Get("oauth_token_secret"); val != "" {
+		s.authData.AccessTokenSecret = val
+	} else {
+		return fmt.Errorf("OAuth response: there is no oauth_token_secret in response")
+	}
+
+	s.setCachedSecret(cacheName, s.authData.AccessToken, s.authData.AccessTokenSecret)
+	return nil
+}
+
+func (s *FatSOauth1Service) GetAuthCode() error {
 	cacheName := "auth_code"
 	cachedData := s.getCachedSecret(cacheName)
 	if cachedData != nil && cachedData.Value != "" {
@@ -82,7 +139,7 @@ func (s *FatSOauth1Service) Authorize() error {
 		return nil
 	}
 
-	if err := s.RequestToken(); err != nil {
+	if err := s.GetRequestToken(); err != nil {
 		return err
 	}
 
@@ -106,7 +163,7 @@ func (s *FatSOauth1Service) Authorize() error {
 	return nil
 }
 
-func (s *FatSOauth1Service) RequestToken() error {
+func (s *FatSOauth1Service) GetRequestToken() error {
 	cacheName := "request_token"
 	cachedData := s.getCachedSecret(cacheName)
 	if cachedData != nil && cachedData.Value != "" && cachedData.Value2 != "" {
@@ -119,7 +176,8 @@ func (s *FatSOauth1Service) RequestToken() error {
 		return nil
 	}
 
-	oauthParams, err := s.addOauthParams("POST", requestTokenUrl, nil)
+	reqData := url.Values{"oauth_callback": []string{"oob"}}
+	oauthParams, err := s.addOauthParams("POST", requestTokenUrl, reqData)
 	if err != nil {
 		return fmt.Errorf("OAuth request token params error: %v", err)
 	}
@@ -215,7 +273,6 @@ func (s *FatSOauth1Service) addOauthParams(reqMethod string, reqUrl string, reqD
 		vals.Set("oauth_token", url.QueryEscape(s.authData.AccessToken))
 	}
 	vals.Set("oauth_version", "1.0")
-	vals.Set("oauth_callback", "oob")
 
 	signature, err := s.signParams(reqMethod, reqUrl, vals)
 	if err != nil {
@@ -226,59 +283,6 @@ func (s *FatSOauth1Service) addOauthParams(reqMethod string, reqUrl string, reqD
 	return vals, nil
 }
 
-type signParamsContainer [][2]string
-
-func newSignParamsContainer() *signParamsContainer {
-	return &signParamsContainer{}
-}
-
-func (s *signParamsContainer) SetUrlValues(vals url.Values) *signParamsContainer {
-	for name, val := range vals {
-		*s = append(*s, [2]string{name, val[0]})
-	}
-	return s
-}
-
-func (s *signParamsContainer) Sort() *signParamsContainer {
-	sort.Sort(s)
-	return s
-}
-
-func (s *signParamsContainer) String() string {
-	var sb strings.Builder
-	lastIdx := s.Len() - 1
-	for i := 0; i <= lastIdx; i++ {
-		item := (*s)[i]
-		sb.WriteString(url.QueryEscape(item[0]) + "=" + url.QueryEscape(item[1]))
-		if i < lastIdx {
-			sb.WriteString("&")
-		}
-	}
-	return sb.String()
-}
-
-func (s *signParamsContainer) Len() int {
-	return len(*s)
-}
-
-func (s *signParamsContainer) Less(i, j int) bool {
-	s_ := *s
-	name0, value0 := s_[i][0], s_[i][1]
-	name1, value1 := s_[j][0], s_[j][1]
-	if strings.Compare(name1, name0) > 0 {
-		return false
-	}
-	if strings.Compare(name1, name0) < 0 {
-		return true
-	}
-	return strings.Compare(value1, value0) < 0
-}
-
-func (s *signParamsContainer) Swap(i, j int) {
-	s_ := *s
-	s_[i], s_[j] = s_[j], s_[i]
-}
-
 func (s *FatSOauth1Service) signParams(reqMethod string, reqUrl string, params url.Values) (string, error) {
 	urlData, err := url.Parse(reqUrl)
 	if err != nil {
@@ -286,16 +290,18 @@ func (s *FatSOauth1Service) signParams(reqMethod string, reqUrl string, params u
 	}
 	cleanUrl := fmt.Sprintf("%s://%s%s", urlData.Scheme, urlData.Host, urlData.Path)
 
-	signParamsStr := newSignParamsContainer().SetUrlValues(params).Sort().String()
-	baseString := fmt.Sprintf("%s&%s&%s", reqMethod, url.QueryEscape(cleanUrl), url.QueryEscape(signParamsStr))
+	baseString := fmt.Sprintf("%s&%s&%s", reqMethod, url.QueryEscape(cleanUrl), url.QueryEscape(params.Encode()))
 	baseString = strings.Replace(baseString, "+", "%20", -1)
 	baseString = strings.Replace(baseString, "%7E", "~", -1)
 
-	log.Println(baseString)
-
 	key := url.QueryEscape(s.Keys.ConsumerSecret) + "&"
-	if s.authData.AccessTokenSecret != "" {
-		key += s.authData.AccessTokenSecret
+	oauthTokenParam := params.Get("oauth_token")
+	if oauthTokenParam != "" {
+		if oauthTokenParam == url.QueryEscape(s.authData.AccessToken) {
+			key += s.authData.AccessTokenSecret
+		} else if oauthTokenParam == url.QueryEscape(s.authData.RequestToken) {
+			key += s.authData.RequestTokenSecret
+		}
 	}
 
 	digest := hmac.New(sha1.New, []byte(key))

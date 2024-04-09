@@ -21,6 +21,6 @@ func main() {
 	}
 
 	data, err := fs.GetTestData()
-	fmt.Printf("DATA: %+v\n", data)
 	fmt.Printf("ERROR: %+v\n", err)
+	fmt.Printf("DATA: %+v\n", data)
 }
