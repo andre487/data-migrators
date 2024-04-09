@@ -2,10 +2,13 @@ package fatsecret
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -28,11 +31,11 @@ func New(keyData []byte, options ...func(s *FatSecret)) (*FatSecret, error) {
 	oauth := NewFatSOauth1Service(keys)
 	err := oauth.GetRequestToken()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("FatSecret: %v\n", err)
 	}
 	err = oauth.GetAuthCode()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("FatSecret: %v\n", err)
 	}
 
 	p := &FatSecret{oauth: oauth}
@@ -42,33 +45,65 @@ func New(keyData []byte, options ...func(s *FatSecret)) (*FatSecret, error) {
 	return p, nil
 }
 
-func (s *FatSecret) makeApiRequest(method string, reqData map[string]string) (map[string]interface{}, error) {
+type ApiRequestRetryConfig struct {
+	Retries     int
+	Backoff     time.Duration
+	MaxTimeout  time.Duration
+	RetryNumber int
+}
+
+func (s *FatSecret) makeApiRequest(method string, reqData map[string]string, retryConfig *ApiRequestRetryConfig) (map[string]interface{}, error) {
+	if retryConfig == nil {
+		retryConfig = &ApiRequestRetryConfig{
+			Retries:    5,
+			Backoff:    time.Second * 10,
+			MaxTimeout: time.Second * 120,
+		}
+	}
+
 	reqBodyParams := url.Values{"method": []string{method}, "format": []string{"json"}}
 	for key, value := range reqData {
 		reqBodyParams.Set(key, value)
 	}
 	resp, respBody, err := s.oauth.MakeHttpRequest("POST", apiUrl, reqBodyParams)
 	if err != nil {
-		return nil, fmt.Errorf("error when making request for method %s: %v", method, err)
+		return nil, fmt.Errorf("FatSecret: error when making request for method %s: %v", method, err)
 	}
 
 	if resp.StatusCode > 201 {
-		return nil, fmt.Errorf("error when making API request, HTTP %d: method=%s, %v", resp.StatusCode, method, string(respBody))
+		return nil, fmt.Errorf("FatSecret: error when making API request, HTTP %d: method=%s, %v", resp.StatusCode, method, string(respBody))
 	}
 
 	var bodyData map[string]interface{}
 	if err := json.Unmarshal(respBody, &bodyData); err != nil {
-		return nil, fmt.Errorf("error when requesting token, invalid body: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when requesting token, invalid body: %v", err)
 	}
 
 	if bodyData["error"] != nil {
 		apiErr := bodyData["error"].(map[string]interface{})
 		errCode := uint64(apiErr["code"].(float64))
 		errMsg := apiErr["message"].(string)
-		return nil, fmt.Errorf("API error: method=%s, code=%d: %s", method, errCode, errMsg)
+
+		if retryConfig.Retries > 0 && retryConfig.RetryNumber < retryConfig.Retries && isRetryableApiError(errMsg) {
+			waitTime := retryConfig.Backoff * time.Duration(math.Pow(2, float64(retryConfig.RetryNumber)))
+			retryConfig.RetryNumber++
+			log.Printf("WARN: FatSecret: Retriable API error: %s", errMsg)
+			log.Printf("WARN: FatSecret: Retry API request because of error, retryNumber=%d, waitTime=%s", retryConfig.RetryNumber, waitTime.String())
+			time.Sleep(waitTime)
+			return s.makeApiRequest(method, reqData, retryConfig)
+		}
+
+		return nil, fmt.Errorf("FatSecret: API error: method=%s, code=%d: %s", method, errCode, errMsg)
 	}
 
 	return bodyData, nil
+}
+
+func isRetryableApiError(msg string) bool {
+	if strings.Contains(msg, "User is performing too many actions") {
+		return true
+	}
+	return false
 }
 
 type FoodEntriesDataRaw struct {
@@ -145,17 +180,17 @@ type FoodEntryData struct {
 
 func FoodEntriesDataFromRaw(rawData FoodEntriesDataRaw) (*FoodEntriesData, error) {
 	if len(rawData.Other) > 0 {
-		log.Printf("WARN: FoodEntriesDataRaw.Other is not empty: %v\n", rawData.Other)
+		log.Printf("WARN: FatSecret: FoodEntriesDataRaw.Other is not empty: %v\n", rawData.Other)
 	}
 
 	if len(rawData.FoodEntries.Other) > 0 {
-		log.Printf("WARN: FoodEntriesDataRaw.FoodEntries.Other is not empty: %v\n", rawData.FoodEntries.Other)
+		log.Printf("WARN: FatSecret: FoodEntriesDataRaw.FoodEntries.Other is not empty: %v\n", rawData.FoodEntries.Other)
 	}
 
 	res := FoodEntriesData{}
 	for _, item := range rawData.FoodEntries.FoodEntry {
 		if len(item.Other) > 0 {
-			log.Printf("WARN: FoodEntryData.Other is not empty: %v\n", item.Other)
+			log.Printf("WARN: FatSecret: FoodEntryData.Other is not empty: %v\n", item.Other)
 		}
 
 		var err error
@@ -183,70 +218,70 @@ func FoodEntriesDataFromRaw(rawData FoodEntriesDataRaw) (*FoodEntriesData, error
 		var potassium float64
 
 		if dateInt, err = parsing.ParseInt64(item.DateInt); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw DateInt: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw DateInt: %v", err)
 		}
 		if foodId, err = parsing.ParseInt64(item.FoodId); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw FoodId: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw FoodId: %v", err)
 		}
 		if foodEntryId, err = parsing.ParseInt64(item.FoodEntryId); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw FoodEntryId: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw FoodEntryId: %v", err)
 		}
 		if servingId, err = parsing.ParseInt64(item.ServingId); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw ServingId: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw ServingId: %v", err)
 		}
 		if numberOfUnits, err = parsing.ParseFloat64(item.NumberOfUnits); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw NumberOfUnits: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw NumberOfUnits: %v", err)
 		}
 		if protein, err = parsing.ParseFloat64(item.Protein); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Protein: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Protein: %v", err)
 		}
 		if calories, err = parsing.ParseFloat64(item.Calories); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Calories: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Calories: %v", err)
 		}
 		if carbohydrate, err = parsing.ParseFloat64(item.Carbohydrate); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Carbohydrate: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Carbohydrate: %v", err)
 		}
 		if fat, err = parsing.ParseFloat64(item.Fat); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Fat: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Fat: %v", err)
 		}
 		if fiber, err = parsing.ParseFloat64(item.Fiber); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Fiber: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Fiber: %v", err)
 		}
 		if sugar, err = parsing.ParseFloat64(item.Sugar); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Sugar: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Sugar: %v", err)
 		}
 		if calcium, err = parsing.ParseFloat64(item.Calcium); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Calcium: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Calcium: %v", err)
 		}
 		if cholesterol, err = parsing.ParseFloat64(item.Cholesterol); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Cholesterol: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Cholesterol: %v", err)
 		}
 		if iron, err = parsing.ParseFloat64(item.Iron); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Iron: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Iron: %v", err)
 		}
 		if monounsaturatedFat, err = parsing.ParseFloat64(item.MonounsaturatedFat); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw MonounsaturatedFat: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw MonounsaturatedFat: %v", err)
 		}
 		if polyunsaturatedFat, err = parsing.ParseFloat64(item.PolyunsaturatedFat); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw PolyunsaturatedFat: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw PolyunsaturatedFat: %v", err)
 		}
 		if saturatedFat, err = parsing.ParseFloat64(item.SaturatedFat); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw SaturatedFat: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw SaturatedFat: %v", err)
 		}
 		if transFat, err = parsing.ParseFloat64(item.TransFat); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw TransFat: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw TransFat: %v", err)
 		}
 		if vitaminA, err = parsing.ParseFloat64(item.VitaminA); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw VitaminA: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw VitaminA: %v", err)
 		}
 		if vitaminC, err = parsing.ParseFloat64(item.VitaminC); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw VitaminC: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw VitaminC: %v", err)
 		}
 		if sodium, err = parsing.ParseFloat64(item.Sodium); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Sodium: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Sodium: %v", err)
 		}
 		if potassium, err = parsing.ParseFloat64(item.Potassium); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Potassium: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesDataRaw Potassium: %v", err)
 		}
 
 		res.FoodEntries.FoodEntry = append(res.FoodEntries.FoodEntry, FoodEntryData{
@@ -284,19 +319,19 @@ func FoodEntriesDataFromRaw(rawData FoodEntriesDataRaw) (*FoodEntriesData, error
 
 func (s *FatSecret) FoodEntriesGet(date time.Time) (*FoodEntriesData, error) {
 	if err := s.oauth.Authorize(); err != nil {
-		return nil, fmt.Errorf("auth error: %v", err)
+		return nil, fmt.Errorf("FatSecret: auth error: %v", err)
 	}
 
 	days := misc.DateToDaysFromEpoch(date)
 	reqData := map[string]string{"date": strconv.FormatInt(days, 10)}
-	rawData, err := s.makeApiRequest("food_entries.get.v2", reqData)
+	rawData, err := s.makeApiRequest("food_entries.get.v2", reqData, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error when requesting food entries: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when requesting food entries: %v", err)
 	}
 
 	rawRes := FoodEntriesDataRaw{}
 	if err := mapstructure.Decode(rawData, &rawRes); err != nil {
-		return nil, fmt.Errorf("error when parsing response of food_entries.get.v2: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when parsing response of food_entries.get.v2: %v", err)
 	}
 
 	return FoodEntriesDataFromRaw(rawRes)
@@ -342,21 +377,21 @@ type FoodEntryDayData struct {
 
 func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntriesMonthData, error) {
 	if len(rawData.Other) > 0 {
-		log.Printf("WARN: FoodEntriesMonthDataRaw.Other is not empty: %v\n", rawData.Other)
+		log.Printf("WARN: FatSecret: FoodEntriesMonthDataRaw.Other is not empty: %v\n", rawData.Other)
 	}
 
 	if len(rawData.Month.Other) > 0 {
-		log.Printf("WARN: FoodEntriesMonthDataRaw.Month.Other is not empty: %v\n", rawData.Month.Other)
+		log.Printf("WARN: FatSecret: FoodEntriesMonthDataRaw.Month.Other is not empty: %v\n", rawData.Month.Other)
 	}
 
 	var err error
 	var fromDateInt int64
 	var toDateInt int64
 	if fromDateInt, err = parsing.ParseInt64(rawData.Month.FromDateInt); err != nil {
-		return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw FromDateInt: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesMonthDataRaw FromDateInt: %v", err)
 	}
 	if toDateInt, err = parsing.ParseInt64(rawData.Month.ToDateInt); err != nil {
-		return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw ToDateInt: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesMonthDataRaw ToDateInt: %v", err)
 	}
 
 	res := FoodEntriesMonthData{}
@@ -368,7 +403,7 @@ func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntries
 
 	for _, item := range rawData.Month.Day {
 		if len(item.Other) > 0 {
-			log.Printf("WARN: FoodEntryDayData.Other is not empty: %v\n", item.Other)
+			log.Printf("WARN: FatSecret: FoodEntryDayData.Other is not empty: %v\n", item.Other)
 		}
 
 		var err error
@@ -379,16 +414,16 @@ func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntries
 		var protein float64
 
 		if dateInt, err = parsing.ParseInt64(item.DateInt); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw DateInt: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesMonthDataRaw DateInt: %v", err)
 		}
 		if calories, err = parsing.ParseFloat64(item.Calories); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw Calories: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesMonthDataRaw Calories: %v", err)
 		}
 		if fat, err = parsing.ParseFloat64(item.Fat); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw Fat: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesMonthDataRaw Fat: %v", err)
 		}
 		if protein, err = parsing.ParseFloat64(item.Protein); err != nil {
-			return nil, fmt.Errorf("error when parsing FoodEntriesMonthDataRaw Protein: %v", err)
+			return nil, fmt.Errorf("FatSecret: error when parsing FoodEntriesMonthDataRaw Protein: %v", err)
 		}
 
 		res.Month.Day = append(res.Month.Day, FoodEntryDayData{
@@ -404,26 +439,83 @@ func FoodEntriesMonthDataFromRaw(rawData *FoodEntriesMonthDataRaw) (*FoodEntries
 	return &res, nil
 }
 
-func (s *FatSecret) FoodEntriesGetMonth(date time.Time) (*FoodEntriesMonthData, error) {
+func (s *FatSecret) FoodEntriesGetMonth(fromDate time.Time) (*FoodEntriesMonthData, error) {
 	if err := s.oauth.Authorize(); err != nil {
-		return nil, fmt.Errorf("auth error: %v", err)
+		return nil, fmt.Errorf("FatSecret: auth error: %v", err)
 	}
 
-	days := misc.DateToDaysFromEpoch(date)
+	days := misc.DateToDaysFromEpoch(fromDate)
 	reqData := map[string]string{"date": strconv.FormatInt(days, 10)}
-	rawData, err := s.makeApiRequest("food_entries.get_month.v2", reqData)
+	rawData, err := s.makeApiRequest("food_entries.get_month.v2", reqData, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error when requesting food entries for month: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when requesting food entries for month: %v", err)
 	}
 
 	rawRes := FoodEntriesMonthDataRaw{}
 	if err := mapstructure.Decode(rawData, &rawRes); err != nil {
-		return nil, fmt.Errorf("error when parsing response of food_entries.get.v2: %v", err)
+		return nil, fmt.Errorf("FatSecret: error when parsing response of food_entries.get.v2: %v", err)
 	}
 
 	return FoodEntriesMonthDataFromRaw(&rawRes)
 }
 
-func (s *FatSecret) GetTestData() (*FoodEntriesData, error) {
-	return s.FoodEntriesGet(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC))
+type DiaryData struct {
+	FromDate          time.Time
+	ToDate            time.Time
+	AggregatedDayData []FoodEntryDayData
+	DiaryData         []FoodEntryData
+}
+
+func (s *FatSecret) GetDiary(fromDate time.Time, toDate time.Time) (*DiaryData, error) {
+	delta := toDate.Sub(fromDate)
+	if delta < 0 {
+		return nil, errors.New("FatSecret: GetDiary: fromDate > toDate")
+	}
+
+	res := DiaryData{}
+
+	var dates []time.Time
+	curDate := fromDate
+	for {
+		log.Printf("FatSecret: Get diary data for month from %v\n", curDate)
+		monthData, err := s.FoodEntriesGetMonth(curDate)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, item := range monthData.Month.Day {
+			dates = append(dates, item.Date)
+			res.AggregatedDayData = append(res.AggregatedDayData, item)
+		}
+
+		curDate = monthData.Month.ToDate.Add(time.Hour * 24)
+		if toDate.Sub(curDate) < 0 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	if len(dates) > 0 {
+		res.FromDate = dates[0]
+		res.ToDate = dates[len(dates)-1]
+	}
+
+	for _, date := range dates {
+		log.Printf("FatSecret: Get diary food entries for date %v\n", date)
+		data, err := s.FoodEntriesGet(date)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, foodEntry := range data.FoodEntries.FoodEntry {
+			res.DiaryData = append(res.DiaryData, foodEntry)
+		}
+		time.Sleep(time.Second)
+	}
+
+	return &res, nil
+}
+
+func (s *FatSecret) GetTestData() (interface{}, error) {
+	return s.GetDiary(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 4, 9, 0, 0, 0, 0, time.UTC))
 }

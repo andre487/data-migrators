@@ -64,7 +64,7 @@ func (s *FatSOauth1Service) MakeHttpRequest(reqMethod string, reqUrl string, req
 		return nil, nil, fmt.Errorf("error when creating OAuth params for request: %v", err)
 	}
 
-	resp, respBody, err := req_util.MakeHttpRequest(reqMethod, reqUrl, reqData)
+	resp, respBody, err := req_util.MakeHttpRequest(reqMethod, reqUrl, reqData, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error when making OAuth signed request: %v", err)
 	}
@@ -101,7 +101,7 @@ func (s *FatSOauth1Service) Authorize() error {
 		return fmt.Errorf("OAuth request token params error: %v", err)
 	}
 
-	resp, respBody, err := req_util.MakeHttpRequest("POST", accessTokenUrl, oauthParams)
+	resp, respBody, err := req_util.MakeHttpRequest("POST", accessTokenUrl, oauthParams, nil)
 	if err != nil {
 		return fmt.Errorf("OAuth request token creation error: %v", err)
 	}
@@ -182,7 +182,7 @@ func (s *FatSOauth1Service) GetRequestToken() error {
 		return fmt.Errorf("OAuth request token params error: %v", err)
 	}
 
-	resp, respBody, err := req_util.MakeHttpRequest("POST", requestTokenUrl, oauthParams)
+	resp, respBody, err := req_util.MakeHttpRequest("POST", requestTokenUrl, oauthParams, nil)
 	if err != nil {
 		return fmt.Errorf("OAuth request token creation error: %v", err)
 	}
