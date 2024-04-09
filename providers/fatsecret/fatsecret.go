@@ -11,6 +11,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/andre487/data-migrators/utils/misc"
+	"github.com/andre487/data-migrators/utils/parsing"
 )
 
 const apiUrl = "https://platform.fatsecret.com/rest/server.api"
@@ -157,10 +158,10 @@ func FoodEntriesDataFromRaw(rawData FoodEntriesDataRaw) (*FoodEntriesData, error
 		}
 
 		var err error
-		var dateInt int
-		var foodId int
-		var foodEntryId int
-		var servingId int
+		var dateInt int64
+		var foodId int64
+		var foodEntryId int64
+		var servingId int64
 		var numberOfUnits float64
 		var protein float64
 		var calories float64
@@ -180,78 +181,78 @@ func FoodEntriesDataFromRaw(rawData FoodEntriesDataRaw) (*FoodEntriesData, error
 		var sodium float64
 		var potassium float64
 
-		if dateInt, err = strconv.Atoi(item.DateInt); err != nil {
+		if dateInt, err = parsing.ParseInt64(item.DateInt); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw DateInt: %v", err)
 		}
-		if foodId, err = strconv.Atoi(item.FoodId); err != nil {
+		if foodId, err = parsing.ParseInt64(item.FoodId); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw FoodId: %v", err)
 		}
-		if foodEntryId, err = strconv.Atoi(item.FoodEntryId); err != nil {
+		if foodEntryId, err = parsing.ParseInt64(item.FoodEntryId); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw FoodEntryId: %v", err)
 		}
-		if servingId, err = strconv.Atoi(item.ServingId); err != nil {
+		if servingId, err = parsing.ParseInt64(item.ServingId); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw ServingId: %v", err)
 		}
-		if numberOfUnits, err = strconv.ParseFloat(item.NumberOfUnits, 64); err != nil {
+		if numberOfUnits, err = parsing.ParseFloat64(item.NumberOfUnits); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw NumberOfUnits: %v", err)
 		}
-		if protein, err = strconv.ParseFloat(item.Protein, 64); len(item.Protein) > 0 && err != nil {
+		if protein, err = parsing.ParseFloat64(item.Protein); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Protein: %v", err)
 		}
-		if calories, err = strconv.ParseFloat(item.Calories, 64); len(item.Calories) > 0 && err != nil {
+		if calories, err = parsing.ParseFloat64(item.Calories); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Calories: %v", err)
 		}
-		if carbohydrate, err = strconv.ParseFloat(item.Carbohydrate, 64); len(item.Carbohydrate) > 0 && err != nil {
+		if carbohydrate, err = parsing.ParseFloat64(item.Carbohydrate); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Carbohydrate: %v", err)
 		}
-		if fat, err = strconv.ParseFloat(item.Fat, 64); len(item.Fat) > 0 && err != nil {
+		if fat, err = parsing.ParseFloat64(item.Fat); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Fat: %v", err)
 		}
-		if fiber, err = strconv.ParseFloat(item.Fiber, 64); len(item.Fiber) > 0 && err != nil {
+		if fiber, err = parsing.ParseFloat64(item.Fiber); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Fiber: %v", err)
 		}
-		if sugar, err = strconv.ParseFloat(item.Sugar, 64); len(item.Sugar) > 0 && err != nil {
+		if sugar, err = parsing.ParseFloat64(item.Sugar); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Sugar: %v", err)
 		}
-		if calcium, err = strconv.ParseFloat(item.Calcium, 64); len(item.Calcium) > 0 && err != nil {
+		if calcium, err = parsing.ParseFloat64(item.Calcium); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Calcium: %v", err)
 		}
-		if cholesterol, err = strconv.ParseFloat(item.Cholesterol, 64); len(item.Cholesterol) > 0 && err != nil {
+		if cholesterol, err = parsing.ParseFloat64(item.Cholesterol); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Cholesterol: %v", err)
 		}
-		if iron, err = strconv.ParseFloat(item.Iron, 64); len(item.Iron) > 0 && err != nil {
+		if iron, err = parsing.ParseFloat64(item.Iron); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Iron: %v", err)
 		}
-		if monounsaturatedFat, err = strconv.ParseFloat(item.MonounsaturatedFat, 64); len(item.MonounsaturatedFat) > 0 && err != nil {
+		if monounsaturatedFat, err = parsing.ParseFloat64(item.MonounsaturatedFat); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw MonounsaturatedFat: %v", err)
 		}
-		if polyunsaturatedFat, err = strconv.ParseFloat(item.PolyunsaturatedFat, 64); len(item.PolyunsaturatedFat) > 0 && err != nil {
+		if polyunsaturatedFat, err = parsing.ParseFloat64(item.PolyunsaturatedFat); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw PolyunsaturatedFat: %v", err)
 		}
-		if saturatedFat, err = strconv.ParseFloat(item.SaturatedFat, 64); len(item.SaturatedFat) > 0 && err != nil {
+		if saturatedFat, err = parsing.ParseFloat64(item.SaturatedFat); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw SaturatedFat: %v", err)
 		}
-		if transFat, err = strconv.ParseFloat(item.TransFat, 64); len(item.TransFat) > 0 && err != nil {
+		if transFat, err = parsing.ParseFloat64(item.TransFat); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw TransFat: %v", err)
 		}
-		if vitaminA, err = strconv.ParseFloat(item.VitaminA, 64); len(item.VitaminA) > 0 && err != nil {
+		if vitaminA, err = parsing.ParseFloat64(item.VitaminA); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw VitaminA: %v", err)
 		}
-		if vitaminC, err = strconv.ParseFloat(item.VitaminC, 64); len(item.VitaminC) > 0 && err != nil {
+		if vitaminC, err = parsing.ParseFloat64(item.VitaminC); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw VitaminC: %v", err)
 		}
-		if sodium, err = strconv.ParseFloat(item.Sodium, 64); len(item.Sodium) > 0 && err != nil {
+		if sodium, err = parsing.ParseFloat64(item.Sodium); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Sodium: %v", err)
 		}
-		if potassium, err = strconv.ParseFloat(item.Potassium, 64); len(item.Potassium) > 0 && err != nil {
+		if potassium, err = parsing.ParseFloat64(item.Potassium); err != nil {
 			return nil, fmt.Errorf("error when parsing FoodEntriesDataRaw Potassium: %v", err)
 		}
 
 		res.FoodEntries.FoodEntry = append(res.FoodEntries.FoodEntry, FoodEntryData{
-			DateInt:              int64(dateInt),
-			FoodId:               int64(foodId),
-			FoodEntryId:          int64(foodEntryId),
-			ServingId:            int64(servingId),
+			DateInt:              dateInt,
+			FoodId:               foodId,
+			FoodEntryId:          foodEntryId,
+			ServingId:            servingId,
 			FoodEntryName:        item.FoodEntryName,
 			FoodEntryDescription: item.FoodEntryDescription,
 			NumberOfUnits:        numberOfUnits,
